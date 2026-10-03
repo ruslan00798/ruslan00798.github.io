@@ -1,37 +1,49 @@
-#Сторонние библиотеки
-from aiogram import Router, F
-from aiogram.types import CallbackQuery
+#learn.py
+
+import asyncio
+import logging
+
+from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery
 
-
-#Локальные модули проекта
-from database.requests import (
-    finish_session,
-    get_language,
-    save_learning_session,
-    get_random_word,
-    add_word_progress,
-    
+from filters.history_data import (
+    LearnAnswerCallback,
+    LearnLevelCallback,
+    LearnCategoryCallback
 )
-
-from states.learn_state import LearnState
-from services.learning_flow import  process_learning_answer, process_word_answer
-from services.word_sender import send_word
 from keyboards.back_menu_kbd import back_menu_keyboard
 from keyboards.category_kbd import category_keyboard
 from keyboards.level_kbd import level_keyboard
+from services.learning.constants import MODE_NEW
+from services.learning.repository import LearningRepository
+from services.learning_service import LearningService
+from services.message_service import cleanup_word_message
+from services.word_sender import (
+    build_answer_text,
+    get_finish_message,
+    get_mode_title,
+    send_word,
+)
+from states.learn_state import LearnState
 
+logger = logging.getLogger(__name__)
+
+learning_repository = LearningRepository()
+learning_service = LearningService(learning_repository)
 
 
 learn_router = Router()
 
 
-# ====================================
-# Новые слова
-# =====================================
-
 @learn_router.callback_query(F.data == "learn_words")
 async def learn_words(callback: CallbackQuery):
+
+    logger.info(
+        "User %s opened learning menu",
+        callback.from_user.id
+    )
 
     await callback.message.answer(
         "📚 Выберите категорию:",
@@ -41,31 +53,22 @@ async def learn_words(callback: CallbackQuery):
     await callback.answer()
 
 
+@learn_router.callback_query(LearnCategoryCallback.filter())
+async def select_category(callback: CallbackQuery, state: FSMContext, callback_data: LearnCategoryCallback):
 
-# =====================================
-# Выбор категории
-# =====================================
+    category = callback_data.category
 
-@learn_router.callback_query(F.data.startswith("category:"))
-async def select_category(
-    callback: CallbackQuery,
-    state: FSMContext
-):
-
-    category = callback.data.split(":")[1]
-
-
-    await state.update_data(
-        category=category
+    logger.info(
+        "User %s selected category=%s",
+        callback.from_user.id,
+        category
     )
 
+    await state.update_data(category=category)
 
-    await state.set_state(
-        LearnState.choosing_level
-    )
+    await state.set_state(LearnState.choosing_level)
 
-
-    await callback.message.answer(
+    await callback.message.edit_text(
         f"📂 Категория: {category}\n\n"
         "🎓 Выберите уровень:",
         reply_markup=level_keyboard()
@@ -75,191 +78,175 @@ async def select_category(
     await callback.answer()
 
 
-
-# =====================================
-# Выбор уровня
-# =====================================
-
-@learn_router.callback_query(LearnState.choosing_level, F.data.startswith("level:"))
-async def select_level(callback: CallbackQuery,state: FSMContext):
-
-    user_id = callback.from_user.id
-
-
-    language = await get_language(
-        user_id
-    )
-
+@learn_router.callback_query(LearnState.choosing_level, LearnLevelCallback.filter())
+async def select_level(
+    callback: CallbackQuery, 
+    state: FSMContext, 
+    callback_data: LearnLevelCallback
+):
 
     data = await state.get_data()
 
-
     category = data["category"]
 
+    level = callback_data.level
 
-    level = callback.data.split(":")[1]
-
-
-
-    await save_learning_session(
-        user_id,
-        category,
-        level
+    logger.info(
+        "User %s selected level=%s for category=%s",
+        callback.from_user.id,
+        level,
+        category
     )
 
-
-    # сохраняем режим!
-    await state.update_data(
-        mode="new",
+    result = await learning_service.start_new_learning(
+        user_id=callback.from_user.id,
         category=category,
         level=level
     )
 
-
-
-    word = await get_random_word(
-        user_id,
-        language,
-        category,
-        level
-    )
-
-
-
-    if not word:
+    if not result:
 
         await callback.message.answer(
             "😔 Для этого уровня пока нет слов."
         )
 
         await state.clear()
-
         await callback.answer()
 
         return
     
+    await state.update_data(
+        mode=result["mode"],
+        level=level
+    )
 
-    await add_word_progress(user_id, word["id"])
+    await callback.message.delete()
 
-
-
-    await send_word(
-        callback,
-        word,
+    audio_message_id = await send_word(
+        callback.message,
+        result["word"],
         title="🧠 Новое слово"
     )
 
+    await state.update_data(
+        audio_message_id=audio_message_id,
+    )
 
     await callback.answer()
 
 
+@learn_router.callback_query(LearnAnswerCallback.filter())
+async def learn_answer(
+    callback: CallbackQuery,
+    state: FSMContext,
+    callback_data: LearnAnswerCallback,
+):
 
+    word_id = callback_data.word_id
+    answer = callback_data.answer
 
+    data = await state.get_data()
 
-# =====================================
-# Ответы пользователя
-# =====================================
+    mode = data.get("mode", MODE_NEW)
+    audio_message_id = data.get("audio_message_id")
 
-
-@learn_router.callback_query(F.data.startswith("learn_answer:"))
-async def learn_answer(callback: CallbackQuery,state: FSMContext):
-
-    await process_learning_answer(
-        callback,
-        state,
+    result = await learning_service.process_answer(
+        user_id=callback.from_user.id,
+        word_id=word_id,
+        answer=answer,
+        mode=mode,
+        update_session=True,
     )
 
+     
+    if result.word is None:
+        await callback.message.answer(
+            "❌ Слово не найдено."
+        )
+
+        await callback.answer()
+        return
+   
+    await  cleanup_word_message(
+        message=callback.message,
+        bot=callback.bot,
+        audio_message_id=audio_message_id
+    )
+
+    await asyncio.sleep(0.3)
     
 
+    # =====================================
+    # Показываем результат
+    # =====================================
 
-
-#ЗНАЮ
-@learn_router.callback_query(F.data.startswith("word_known:"))
-async def word_yes(callback: CallbackQuery, state: FSMContext):
-
-    word_id = int(callback.data.split(":")[1])
-
-    await process_word_answer(
-        callback=callback,
-        state=state,
-        word_id=word_id,
-        correct=True,
+    result_message = await callback.message.answer(
+        build_answer_text(
+            correct=result.correct,
+            translation=result.word["translation"],
+        )
     )
-  
 
+    # Результат показываем 1 секунды
+    await asyncio.sleep(1.0)
 
-#НЕ ЗНАЮ
-@learn_router.callback_query(F.data.startswith("word_unknown:"))
-async def word_no(callback: CallbackQuery, state: FSMContext):
+    try:
+        await result_message.delete()
+    except TelegramBadRequest:
+        # Сообщение уже могло быть удалено.
+        pass
 
-    word_id = int(callback.data.split(":")[1])
+    if result.finished:
 
-    await process_word_answer(
-        callback=callback,
-        state=state,
-        word_id=word_id,
-        correct=False,
+        await callback.message.answer(
+            get_finish_message(mode),
+            reply_markup=back_menu_keyboard(),
+        )
+
+        await state.clear()
+
+        await callback.answer()
+        return
+
+    audio_message_id = await send_word(
+        callback.message,
+        result.next_word,
+        title=get_mode_title(mode),
     )
+    
+    await state.update_data(
+        audio_message_id=audio_message_id,
+    )
+
+    await callback.answer()
 
 # =====================================
 # Завершение обучения
 # =====================================
 
 @learn_router.callback_query(F.data == "finish_learning")
-async def finish_learning( callback: CallbackQuery):
+async def finish_learning_handler(
+    callback: CallbackQuery
+):
 
-    user_id = callback.from_user.id
-
-    result = await finish_session(
-        user_id
+    result = await learning_service.finish_learning(
+        user_id=callback.from_user.id
     )
 
     if not result:
-
-
         await callback.message.answer(
             "Сессия ещё не начата."
         )
-
-
         await callback.answer()
-
         return
 
-
     await callback.message.answer(
-
         "🎉 Обучение завершено!\n\n"
-
         f"📚 Всего ответов: {result['total_answers']}\n"
-
         f"✅ Правильно: {result['correct_answers']}\n"
-
         f"❌ Ошибки: {result['wrong_answers']}",
-
         reply_markup=back_menu_keyboard()
-
     )
 
-
-
     await callback.answer()
-
-@learn_router.callback_query(F.data.startswith("input_word:"))
-async def input_word_start(callback: CallbackQuery,state: FSMContext):
-
-    word_id = int(callback.data.split(":")[1])
-
-
-    await state.update_data(input_word_id=word_id)
-
-
-    await state.set_state(LearnState.waiting_word_answer)
-
-
-    await callback.message.answer("✍️ Напишите перевод слова:")
-
-
-    await callback.answer()
-
 

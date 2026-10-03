@@ -1,39 +1,41 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from filters.history_data import LearnCategoryCallback
 
 
 def category_keyboard():
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🍎 Еда",
-                    callback_data="category:food"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🐶 Животные",
-                    callback_data="category:animals"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🚗 Транспорт",
-                    callback_data="category:transport"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🏠 Дом",
-                    callback_data="category:home"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🌎 Все слова",
-                    callback_data="category:all"
-                )
-            ]
-        ]
+    kb = InlineKeyboardBuilder()
+
+    kb.button(
+        text="🍎 Еда",
+        callback_data=LearnCategoryCallback(category="food").pack(),
     )
+
+    kb.button(
+          text="🐶 Животные",
+          callback_data=LearnCategoryCallback(category="animals").pack(),
+    )
+
+    kb.button(
+          text="🚗 Транспорт",
+          callback_data=LearnCategoryCallback(category="transport").pack(),
+    )
+
+    kb.button(
+          text="🏠 Дом",
+          callback_data=LearnCategoryCallback(category="home").pack(),
+    )
+
+    kb.button(
+           text="🌎 Все слова",
+           callback_data=LearnCategoryCallback(category="all").pack(),
+    )
+
+    kb.adjust(1)
+
+    return kb.as_markup()
+       
+           
+          
+    

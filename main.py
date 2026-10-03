@@ -1,16 +1,13 @@
 import asyncio
-import logging
-
 
 from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.redis import RedisStorage
 
+from config import settings
+from database.requests import connect_db, close_db
+from database.redis_client import redis
 
-from database.requests import connect_db
-
-
-from config import BOT_TOKEN
-
-
+from utils.logger import setup_logger
 
 from handlers.start import start_router
 from handlers.menu import menu_router
@@ -20,29 +17,38 @@ from handlers.settings import settings_router
 from handlers.document import document_router
 from handlers.history import history_router
 from handlers.profile import profile_router
-from handlers.study import study_router
+
 from handlers.learn import learn_router
 from handlers.translate import translate_router
-from handlers.callback import callbacks_router
+
 from handlers.voice import voice_router
 from handlers.pictury import picture_router
 from handlers.review import review_router
 
 
-logging.basicConfig(
-    level=logging.INFO
-)
-
 async def main():
-    # Подключаем БД
+
+    setup_logger()
+
+    # ======================
+    # Подключение к БД
+    # ======================
 
     await connect_db()
 
-    bot = Bot(
-        token=BOT_TOKEN
-    )
+    # ======================
+    # Подключение Redis
+    # ======================
 
-    dp = Dispatcher()
+    storage = RedisStorage(redis=redis)
+
+    # ======================
+    # Telegram Bot
+    # ======================
+
+    bot = Bot(token=settings.bot_token)
+
+    dp = Dispatcher(storage=storage)
 
     # ======================
     # Регистрация роутеров
@@ -58,13 +64,11 @@ async def main():
 
     # Главное меню и общие действия
     dp.include_router(menu_router)
-    dp.include_router(callbacks_router)
     dp.include_router(cancel_router)
 
     # Обучение
     dp.include_router(learn_router)
     dp.include_router(review_router)
-    dp.include_router(study_router)
 
     # Дополнительные функции обучения
     dp.include_router(picture_router)
@@ -75,11 +79,19 @@ async def main():
     dp.include_router(document_router)
     dp.include_router(history_router)
 
-    await dp.start_polling(bot)
-   
+    # ======================
+    # Запуск бота
+    # ======================
+
+    try:
+
+        await dp.start_polling(bot)
+
+    finally:
+        await close_db
+        await redis.aclose()
+        await bot.session.close()
 
 
 if __name__ == "__main__":
-
-
     asyncio.run(main())

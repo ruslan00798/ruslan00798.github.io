@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from docx import Document
 from pypdf import PdfReader
 from pptx import Presentation
@@ -18,7 +20,7 @@ def read_document(path: str) -> str:
     Возвращает текст из документа.
     """
 
-    extension = path.rsplit(".", 1)[-1].lower()
+    extension = Path(path).suffix.lower().lstrip(".")
 
     readers = {
         "txt": read_txt,

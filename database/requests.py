@@ -1,57 +1,39 @@
+import logging
+
 import asyncpg
 
+from config import settings
+
 from datetime import date, timedelta
+
+logger = logging.getLogger(__name__)
 
 
 pool = None
 
 
-
-# ==========================
-# Подключение к БД
-# ==========================
-
 async def connect_db():
 
     global pool
 
-
     pool = await asyncpg.create_pool(
-
-        user="translaytor",
-
-        password="ruslan",
-
-        database="translaytor",
-
-        host="localhost"
-
+        user=settings.db_user,
+        password=settings.db_pass,
+        database=settings.db_name,
+        host=settings.db_host,
+        port=settings.db_port,
     )
 
+    logger.info("Database connection pool created")
 
-    db = await pool.fetchval(
-        "SELECT current_database()"
-    )
+async def close_db():
+    global pool
 
+    if pool is not None:
+        await pool.close()
+        pool = None
 
-   
-
-
-
-    tables = await pool.fetch(
-
-        """
-        SELECT tablename
-        FROM pg_tables
-        WHERE schemaname='public'
-        """
-
-    )
-
-
-    
-
-
+        logger.info("Database connection pool closed")
 
 
 
@@ -329,10 +311,11 @@ async def delete_history(
 
     history_id: int
 
-):
+) -> bool:
+   
 
 
-    await pool.execute(
+    result = await pool.execute(
 
         """
         DELETE FROM history
@@ -349,53 +332,40 @@ async def delete_history(
 
     )
 
+    return result == "DELETE 1"
+
 
 # ==========================
 # XP
 # ==========================
 
-async def add_xp(
-    user_id: int,
-    xp: int
-):
+async def add_xp(user_id: int, xp: int):
+    if xp <= 0:
+        return
 
     await pool.execute(
-
         """
         INSERT INTO users(
             telegram_id,
             xp
         )
-
         VALUES(
             $1,
             $2
         )
-
-
         ON CONFLICT(telegram_id)
-
         DO UPDATE SET
-
             xp = users.xp + EXCLUDED.xp
-
         """,
-
         user_id,
-
         xp
-
     )
 
 
 
 
 
-async def get_xp(
-    user_id: int
-) -> int:
-
-
+async def get_xp(user_id: int) -> int:
     xp = await pool.fetchval(
 
         """
@@ -406,16 +376,9 @@ async def get_xp(
         WHERE telegram_id = $1
 
         """,
-
         user_id
-
     )
-
-
     return xp or 0
-
-
-
 
 
 # ==========================
@@ -454,8 +417,37 @@ async def toggle_favorite(
 
     )
 
+# ==========================
+# Удалить из избранного
+# ==========================
+async def remove_favorite(
 
+    user_id: int,
 
+    history_id: int
+
+):
+
+    return await pool.fetchval(
+
+        """
+        UPDATE history
+
+        SET favorite = FALSE
+
+        WHERE id = $1
+
+        AND telegram_id = $2
+
+        RETURNING favorite
+
+        """,
+
+        history_id,
+
+        user_id
+
+    )
 
 
 async def get_favorites(
@@ -474,9 +466,9 @@ async def get_favorites(
 
             original_text,
 
-            translated_text,
+            translated_text
 
-            created_at
+           
 
 
         FROM history
@@ -994,6 +986,7 @@ async def save_word_answer(
     word_id: int,
     correct: bool
 ):
+
     """
     Сохраняет результат ответа пользователя
     и рассчитывает следующую дату повторения.
@@ -1042,7 +1035,7 @@ async def save_word_answer(
                             THEN TRUE
                         ELSE FALSE
                     END,
-
+                
                 next_review =
                     CASE
                         WHEN word_progress.correct_answers = 0
@@ -1124,6 +1117,13 @@ async def save_word_answer(
             user_id,
             word_id
         )
+
+    logger.info(
+        "Word answer saved: user_id=%s word_id=%s correct=%s",
+        user_id,
+        word_id,
+        correct,
+    )        
 
 
 async def get_word_for_review(
@@ -1211,22 +1211,23 @@ async def get_review_count(
 
     return count or 0
 
-async def get_word(word: str):
+async def get_word(word: str, language: str):
 
-    print("SEARCH WORD:", word)
+    
 
     result = await pool.fetchrow(
         """
         SELECT *
         FROM words
         WHERE LOWER(word)=LOWER($1)
+          AND language = $2
         LIMIT 1
         """,
-        word
+        word,
+        language
     )
 
-    print("DATABASE RESULT:", result)
-    print("RESULT TYPE:", type(result))
+    
 
     return result
 
@@ -1236,7 +1237,7 @@ async def create_word(
     translation: str,
     language: str = "en",
     category: str = "general",
-    level: int = "1",
+    level: str = "1",
 ):
 
     row = await pool.fetchrow(
@@ -1364,80 +1365,65 @@ async def get_word_by_id(
         word_id
     )
 
-async def update_word_progress(
-    user_id: int,
-    word_id: int,
-    correct: bool
-):
-    if correct:
-        await pool.execute(
-            """
-            UPDATE word_progress
-            SET
-                correct_answers = correct_answers + 1,
-                next_review = NOW() + INTERVAL '3 days'
-            WHERE telegram_id = $1
-            AND word_id = $2
-            """,
-            user_id,
-            word_id
-        )
-    else:
-        await pool.execute(
-            """
-            UPDATE word_progress
-            SET
-                wrong_answers = wrong_answers + 1,
-                next_review = NOW() + INTERVAL '1 day'
-            WHERE telegram_id = $1
-            AND word_id = $2
-            """,
-            user_id,
-            word_id
-        )
 
 async def update_session_result(
     user_id: int,
     correct: bool
 ):
+    try:
 
-    await pool.execute(
-        """
-        INSERT INTO study_session(
-            telegram_id,
-            total_answers,
-            correct_answers,
-            wrong_answers
+        await pool.execute(
+            """
+            INSERT INTO study_session(
+                telegram_id,
+                total_answers,
+                correct_answers,
+                wrong_answers
+            )
+
+            VALUES(
+                $1,
+                1,
+                $2,
+                $3
+            )
+
+            ON CONFLICT(telegram_id)
+
+            DO UPDATE SET
+
+                total_answers =
+                    study_session.total_answers + 1,
+
+                correct_answers =
+                    study_session.correct_answers + $2,
+
+                wrong_answers =
+                    study_session.wrong_answers + $3
+
+            """,
+
+            user_id,
+
+            1 if correct else 0,
+
+            0 if correct else 1
         )
 
-        VALUES(
-            $1,
-            1,
-            $2,
-            $3
+        logger.info(
+            "Study session updated: user_id=%s correct=%s",
+            user_id,
+            correct
         )
-
-        ON CONFLICT(telegram_id)
-
-        DO UPDATE SET
-
-            total_answers =
-                study_session.total_answers + 1,
-
-            correct_answers =
-                study_session.correct_answers + $2,
-
-            wrong_answers =
-                study_session.wrong_answers + $3
-
-        """,
-
-        user_id,
-
-        1 if correct else 0,
-
-        0 if correct else 1
-    )
+        
+    except Exception:
+        logger.exception(
+            "Failed to update study session: user_id=%s correct=%s",
+            user_id,
+            correct
+        )
+        raise
+            
 
 async def get_session_result(
     user_id: int
@@ -1507,41 +1493,7 @@ async def finish_session(
 
     return row     
 
-async def get_voice_setting(
-    user_id: int
-):
 
-    return await pool.fetchval(
-        """
-        SELECT voice_enabled
-
-        FROM users
-
-        WHERE telegram_id = $1
-        """,
-
-        user_id
-    ) or False
-
-
-
-async def toggle_voice_setting(
-    user_id: int
-):
-
-    return await pool.fetchval(
-        """
-        UPDATE users
-
-        SET voice_enabled = NOT voice_enabled
-
-        WHERE telegram_id = $1
-
-        RETURNING voice_enabled
-        """,
-
-        user_id
-    )   
 
 async def save_learning_session(
     telegram_id: int,
@@ -1626,7 +1578,7 @@ async def get_random_wrong_word(
 
             AND wp.wrong_answers > 0
 
-            AND wp.next_review <= NOW()
+           
 
             AND (
                 wp.learned = FALSE

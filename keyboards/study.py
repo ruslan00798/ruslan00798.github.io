@@ -1,80 +1,27 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from filters.history_data import LearnAnswerCallback
 
 def new_answer_keyboard(
     answers,
-    word_id
+    word_id: int,
 ):
-
-    buttons = []
-
+    kb = InlineKeyboardBuilder()
 
     for answer in answers:
-
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text=answer,
-                    callback_data=f"learn_answer:{word_id}:{answer}"
-                )
-            ]
+        kb.button(
+            text=answer,
+            callback_data=LearnAnswerCallback(
+                word_id=word_id,
+                answer=answer
+            ).pack(),
         )
 
-
-    buttons.append(
-        [
-            InlineKeyboardButton(
-                text="🔊 Прослушать",
-                callback_data=f"voice:{word_id}"
-            )
-        ]
+    kb.button(
+        text="⏹ Завершить",
+        callback_data="finish_learning",
     )
 
+    kb.adjust(1)
 
-    buttons.append(
-        [
-            InlineKeyboardButton(
-                text="⏹ Завершить",
-                callback_data="finish_learning"
-            )
-        ]
-    )
-
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=buttons
-    )
-
-def answer_keyboard(
-    answers,
-    word_id
-):
-
-    buttons = []
-
-
-    for answer in answers:
-
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text=answer,
-                    callback_data=f"answer:{word_id}:{answer}"
-                )
-            ]
-        )
-
-
-    buttons.append(
-        [
-            InlineKeyboardButton(
-                text="🔊 Прослушать",
-                callback_data=f"voice:{word_id}"
-            )
-        ]
-    )
-
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=buttons
-    )
+    return kb.as_markup()    
+           

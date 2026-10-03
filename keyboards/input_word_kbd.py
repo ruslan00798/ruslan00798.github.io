@@ -1,28 +1,19 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from filters.history_data import InputWordCallback, SkipWordCallback, VoiceCallback
 
 
 def input_word_keyboard(word_id: int):
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✍️ Ввести ответ",
-                    callback_data=f"input_word:{word_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔊 Произнести",
-                    callback_data=f"voice:{word_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⏭ Пропустить",
-                    callback_data="skip_word"
-                )
-            ]
-        ]
+    kb = InlineKeyboardBuilder()
+
+    kb.button(
+        text="🔊 Произнести",
+        callback_data=VoiceCallback(
+            word_id=word_id
+        ).pack(),
     )
+
+    kb.adjust(1)
+
+    return kb.as_markup()

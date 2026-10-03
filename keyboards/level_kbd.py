@@ -1,45 +1,56 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from filters.history_data  import LearnLevelCallback
+
 
 def level_keyboard():
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🟢 A1",
-                    callback_data="level:A1"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔵 A2",
-                    callback_data="level:A2"
-                )
-            ],
-              [
-                InlineKeyboardButton(
-                    text="🟡 B1",
-                    callback_data="level:B1"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🟠 B2",
-                    callback_data="level:B2"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔴 C1",
-                    callback_data="level:C1"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⚫ C2",
-                    callback_data="level:C2"
-                )
-            ]
+    kb = InlineKeyboardBuilder()
 
-        ]
+
+    kb.button(
+        text="🟢 A1",
+        callback_data=LearnLevelCallback(level="A1").pack()
     )
+
+    kb.button(
+       text= "🔵 A2",
+       callback_data=LearnLevelCallback(level="A2").pack() 
+    )
+
+    kb.button(
+        text="🟡 B1",
+        callback_data=LearnLevelCallback(level="B1").pack()
+
+    )
+
+    kb.button(
+        text="🟠 B2",
+        callback_data=LearnLevelCallback(level="B2").pack()
+
+    ) 
+
+    kb.button(
+        text="🔴 C1",
+        callback_data=LearnLevelCallback(level="C1").pack()
+    )
+
+    kb.button(
+        text="⚫ C2",
+        callback_data=LearnLevelCallback(level="C2").pack()
+    )
+
+    kb.adjust(1)
+
+
+    return kb.as_markup()
+
+       
+       
+            
+           
+             
+           
+            
+            
+           

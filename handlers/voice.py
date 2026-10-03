@@ -1,45 +1,88 @@
-import os
+#voice.py
+import logging
 
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, FSInputFile
+from aiogram.types import CallbackQuery
 
-from database.requests import get_word_by_id
-from services.tts import generate_audio
+from filters.history_data import VoiceCallback
+from services.learning.repository import LearningRepository
+from services.learning_service import LearningService
+from services.voice_service import send_word_voice
 
+
+learning_repository = LearningRepository()
+learning_service = LearningService(learning_repository)
 
 voice_router = Router()
 
-
-# =====================================
-# Голос
-# =====================================
+logger = logging.getLogger(__name__)
 
 
-@voice_router.callback_query(F.data.startswith("voice:"))
-async def play_voice(callback: CallbackQuery):
+@voice_router.callback_query(VoiceCallback.filter())
+async def play_voice(callback: CallbackQuery, callback_data: VoiceCallback):
 
-    await callback.answer()
+    user_id = callback.from_user.id
+    word_id = callback_data.word_id
 
-    word_id = int(callback.data.split(":")[1])
+    logger.info(
+        "word_voice_started user_id=%s word_id=%s",
+        user_id,
+        word_id,
+    )
 
+    try:
+        word = await learning_service.get_word(word_id)
 
-    word = await get_word_by_id(word_id)
+    except Exception:
+        logger.exception(
+            "word_voice_get_word_failed user_id=%s word_id=%s",
+            user_id,
+            word_id,
+        )
 
-
-    if not word:
-        await callback.message.answer("❌ Слово не найдено")
-
+        await callback.answer(
+            "❌ Не удалось получить слово.",
+            show_alert=True,
+        )
         return
 
+    if not word:
+        logger.warning(
+            "word_voice_not_found user_id=%s word_id=%s",
+            user_id,
+            word_id,
+        )
 
-    file_path = await generate_audio(
-        text=word["word"],
-        language=word["language"]
+        await callback.answer(
+            "❌ Слово не найдено.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        await send_word_voice(
+            message=callback.message,
+            word=word,
+            user_id=user_id,
+        )
+
+    except Exception:
+        logger.exception(
+            "word_voice_send_failed user_id=%s word_id=%s",
+            user_id,
+            word_id,
+        )
+
+        await callback.answer(
+            "❌ Не удалось озвучить слово.",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer("🔊")
+
+    logger.info(
+        "word_voice_completed user_id=%s word_id=%s",
+        user_id,
+        word_id,
     )
-
-    await callback.message.answer_audio(
-        audio=FSInputFile(file_path),
-        caption=f"🔊 {word['word']}"
-    )
-
-    os.remove(file_path)

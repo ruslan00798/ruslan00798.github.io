@@ -1,293 +1,294 @@
-#======================
-#ФАЙЛ learning_service.py ОТВЕЧАЕТ ЗА ПРАВИЛА И ОПЕРАЦИИ ОБУЧЕНИЯ
-#ЭТО МОЗГ ОБУЧЕНИЯ ОТ ОТВЕЧАЕТ КАК ИМЕННО ЭТО СДЕЛАТЬ
-#======================
+import logging
 
-from random import shuffle
+from services.learning.result import LearningResult
+from utils.xp import calculate_study_xp
+from services.learning.constants import MODE_NEW, MODE_ERRORS, MODE_REVIEW
+from services.learning.utils import check_answer
 
-from aiogram.fsm.context import FSMContext
-from states.learn_state import LearnState
+logger = logging.getLogger(__name__)
 
-from database.requests import (
-    add_word_progress,
-    add_xp,
-    get_language,
-    get_learning_session,
-    get_random_word,
-    get_random_wrong_word,
-    get_review_word,
-    get_word_by_id,
-    save_word_answer,
-    update_session_result,
-    get_random_picture_word,
-    get_wrong_answers,
-)
+class LearningService:
+    def __init__(self, repository):
+        self.repository = repository
+        
+    async def prepare_picture_word(self) -> dict | None:
+        """
+        Получает слово с картинкой,
+        сохраняет его в FSM.
 
-from services.dictionary_service import  get_or_create_word
-from services.history_service import get_translation_history
+        Возвращает слово,
+        если оно найдено.
+        """
 
+        word = await self.repository.get_random_picture_word()
 
-async def prepare_picture_word(state: FSMContext) -> dict | None:
-    """
-    Получает слово с картинкой,
-    сохраняет его в FSM.
-
-    Возвращает слово,
-    если оно найдено.
-    """
-
-    word = await get_random_picture_word()
-
-    if not word:
-        return None 
-    
-    await state.update_data(picture_word_id=word["id"])
-
-    await state.set_state(LearnState.waiting_picture_answer)
-
-    return word
+        if not word:
+            return None 
+        
+        return word
 
 
+    async def get_next_word(self, user_id: int, mode: str) -> dict | None:
+        """
+        Возвращает следующее слово в зависимости от режима обучения
+        Если подходящего слова нет возвращает None
+        """
 
-# =====================
-# Получение слов
-# =====================
+        language = await self.repository.get_language(user_id)
 
-async def get_next_word(user_id: int, mode: str,) -> dict | None:
-    """
-    Возвращает следующее слово в зависимости от режима обучения
-    Если подходящего слова нет возвращает None
-    """
+        if not language:
+            return None
+        
+        if mode == MODE_ERRORS:
+            return await self.repository.get_random_wrong_word(user_id, language)
+        
+        if mode == MODE_REVIEW:
+            return await self.repository.get_review_word(user_id, language)
+        
+        session = await self.repository.get_learning_session(user_id)
 
-    language = await get_language(user_id)
+        if not session:
+            return None
+        
+        return await self.repository.get_random_word(
+            user_id,
+            language,
+            session["category"],
+            session["level"],
 
-    print("USER:", user_id)
-    print("MODE:", mode)
-    print("LANGUAGE:", language)
-
-    if not language:
-        return None
-    
-    if mode == "errors":
-        return await get_random_wrong_word(user_id, language)
-    
-    if mode == "review":
-        return await get_review_word(user_id, language)
-    
-    session = await get_learning_session(user_id)
-
-    if not session:
-        return None
-    
-    return await get_random_word(
-        user_id,
-        language,
-        session["category"],
-        session["level"],
-
-    )
-
-
-# =====================
-# Сохранение результата
-# =====================
-
-async def save_word_result(
-    user_id: int,
-    word_id: int,
-    correct: bool,
-):
-    """
-    Сохраняет ответ пользователя
-    и начисляет опыт.
-    """
-
-    await save_word_answer(
-        user_id,
-        word_id,
-        correct,
-    )
-
-    await add_xp(
-        user_id,
-        5 if correct else 1,
-    )
-
-
-# =====================
-# Сохранение результата
-# Обновление сессии
-# =====================
-
-async def save_learning_result(
-    user_id: int,
-    word_id: int,
-    correct: bool,
-):
-    """
-    Сохраняет результат обучения
-    и обновляет статистику сессии.
-    """
-
-    await save_word_result(
-        user_id,
-        word_id,
-        correct,
-    )
-
-    await update_session_result(
-        user_id,
-        correct,
-    )
-
-
-
-
-# =====================
-# Формирование текста
-# =====================
-
-
-def build_answer_text(correct: bool, translation: str,)->str:
-    """
-    Создаем сообщение после проверки ответа.
-    """
-
-    if correct:
-        return(
-            "✅ Правильно!\n"
-            "⭐ +5 XP"
         )
-    
-    return(
-        "❌ Неправильно!\n"
-        f"Правильно: {translation}\n"
-        "⭐ +1 XP"
-    )
-
-# =====================
-# Формирование текста
-# =====================
 
 
-def get_finish_message(mode: str)->str:
-    """
-    Возвращает сообщение после окончания обучения.
-    """
+    # =====================
+    # Сохранение результата
+    # =====================
 
-    if mode == "errors":
-        return "Ошибок больше нет!"
-    
-    if mode == "review":
-        return "🎉 Повторять пока нечего!"
-    
-    return "🎉 Все новые слова изучены!"
-
-def get_mode_title(mode: str) -> str:
-    """
-    Возвращает заголовок для режима обучения.
-    """
-
-    if mode == "errors":
-        return "🔁 Повторение ошибок"
-    
-    if mode == "review":
-        return "📅 Повторение"
-    
-    return "🧠 Новое слово"
-
-
-def build_picture_answer_text(correct: bool, word: str,) -> str:
-    """
-    Формирует сообщение после ответа
-    в режиме картинок.
-    """
-
-    if correct:
-        return(
-            "✅ Правильно!\n"
-            "⭐ +5 XP"
+    async def save_word_result(
+        self,
+        user_id: int,
+        word_id: int,
+        correct: bool,
+    ):
+        """
+        Сохраняет ответ пользователя
+        и начисляет опыт.
+        """
+        logger.info(
+            "Saving answer: user_id=%s, word_id =%s correct=%s",
+            user_id,
+            word_id,
+            correct
         )
-    
-    return (
-        "❌ Неправильно.\n\n"
-        f"Правильное слово: {word}"
-    )
 
-async def build_word_answers(word: dict):
+        try:
+            await self.repository.save_word_answer(
+                user_id,
+                word_id,
+                correct,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to save answer: user_id=%s word_id=%s",
+                user_id,
+                word_id
+            )
+            raise   
 
-    wrong = await get_wrong_answers(word["id"])
+        xp = calculate_study_xp(correct)
 
-    answers = [word["translation"]]
+        logger.info(
+            "XP calculated: user_id=%s xp=%s correct=%s",
+            user_id,
+            xp,
+            correct
+        )
 
-    for item in wrong:
-        answers.append(item["translation"])
-
-    shuffle(answers)  
-
-    return answers
-
-
-def build_added_word_text(word: dict) -> str:
-    """
-    Формирует сообщение после добавления слова.
-    """
-
-    return (
-        "🧠 <b>Новое слово</b>\n\n"
-        f"🇬🇧 {word['word']}\n"
-        f"🇷🇺 {word['translation']}\n\n"
-        f"📚 Категория: {word['category']}\n"
-        f"⭐ Уровень: {word['level']}\n\n"
-        "✅ Слово добавлено в ваш словарь." 
-    )
-
-
-# =====================
-# Проверка ответа
-# =====================
+        try:
+            await self.repository.add_xp(user_id, xp)
+        except Exception:
+            logger.exception(
+                "Failed to add XP: user_id=%s xp=%s",
+                user_id,
+                xp
+            )
+            raise   
 
 
-def check_answer(user_answer: str, correct_answer: str,)-> bool:
+         
+    # =====================
+    # Проверка ответа
+    # =====================
+    async def process_answer(
+        self,
+        user_id: int,
+        word_id: int,
+        mode: str,
+        answer: str | None = None,
+        correct: bool | None = None,
+        update_session: bool = False,
+    ) -> LearningResult:
 
-    return user_answer.strip().lower() == correct_answer.strip().lower()
+        logger.info(
+            "Processing answer: user_id=%s word_id=%s mode=%s",
+            user_id,
+            word_id,
+            mode
+        )
 
-async def get_learning_word(word_id):
-    return await get_word_by_id(word_id)
+        word = await self.repository.get_word(word_id)
+
+        if not word:
+            logger.warning(
+                "Word not found: user_id=%s word_id%s",
+                user_id,
+                word_id
+            )
+            return LearningResult(
+                correct=False,
+                next_word=None,
+                finished=False,
+                word=None,
+            )
+
+        if answer is not None:
+            correct = check_answer(
+                answer,
+                word["translation"],
+            )
+
+        logger.info(
+            "Answer processed: user_id=%s word_id=%s correct=%s",
+            user_id,
+            word_id,
+            correct
+        )
+                        
+        if correct is None:
+            raise ValueError("Не передан answer или correct")
+
+        await self.save_word_result(
+            user_id=user_id,
+            word_id=word_id,
+            correct=correct,
+        )
+
+        if update_session:
+            await self.repository.update_session_result(
+                user_id=user_id,
+                correct=correct,
+            )
+
+        next_word = await self.get_next_word(
+            user_id=user_id,
+            mode=mode,
+        )
+
+        return LearningResult(
+            correct=correct,
+            next_word=next_word,
+            finished=next_word is None,
+            word=word,
+        )
 
 
+    async def start_new_learning(
+            self,  
+            user_id: int,
+            category: str,
+            level: str,
+    ) -> dict | None:
 
+        logger.info(
+            "Starting new learning: user_id=%s category=%s level=%s",
+            user_id,
+            category,
+            level
+        )
 
+        language = await self.repository.get_language(user_id)
 
-# =====================
-# Добавляем слово из истории переводов
-# =====================
+        if not language:
+            logger.warning(
+                "Language not found: user_id=%s",
+                user_id
+            )
+            return None
 
-async def add_word_from_history(user_id: int, history_id: int,):
+        await self.repository.save_learning_session(
+            user_id,
+            category=category,
+            level=level,
+        )
 
-    history = await get_translation_history (user_id, history_id)
+        word = await self.repository.get_random_word(
+            user_id=user_id,
+            language=language,
+            category=category,
+            level=level,
 
-    if history is None:
+        )
+
+        if not word:
+            logger.warning(
+                "No words found: user_id=%s category=%s level=%s",
+                user_id,
+                category,
+                level
+            )
+            return None
+
+        await self.repository.add_word_progress(
+            user_id,
+            word["id"]
+        )
+
+        logger.info(
+            "Learning started successfully: user_id=%s word_id=%s",
+            user_id,
+            word["id"]
+        )
+
         return {
-            "success": False,
-            "error": "history_not_found"
+            "word": word,
+            "mode": MODE_NEW,
         }
-    
-    word_id = await get_or_create_word(
-        history["translated_text"],
-        history["original_text"]
-    )
+
+    async def finish_learning(self, user_id: int)-> dict | None:
+        session = await self.repository.finish_session(user_id)
+
+        if not session:
+            return None
+
+        return session
+
+    async def get_word(self, word_id: int) -> dict | None:
+        return await self.repository.get_word(word_id)
+
+    async def process_picture_answer(
+        self,
+        user_id: int,
+        word_id: int,
+        answer: str,
+    ) -> tuple[dict | None, bool | None]:
+
+        word = await self.repository.get_word(word_id)
+
+        if not word:
+            return None, None
+
+        correct = (
+            answer.strip().lower()
+            == word["word"].strip().lower()
+        )
+
+        await self.save_word_result(
+            user_id=user_id,
+            word_id=word_id,
+            correct=correct,
+        )
+
+        return word, correct
 
 
-    await add_word_progress(user_id, word_id)
 
-    return {
-        "success": True,
-        "word": history["translated_text"],
-        "translation": history["original_text"]
-           
-    }
-
-
-
-    
+        

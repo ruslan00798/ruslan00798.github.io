@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from docx import Document
 from openpyxl import Workbook
@@ -138,91 +139,46 @@ def save_pptx(
 
 
 def find_font():
+    """
+    Ищет TTF-шрифт внутри проекта.
+    Шрифт fonts/Arial.ttf копируется в Docker вместе с приложением.
+    """
 
-    fonts = [
+    project_root = Path(__file__).resolve().parent.parent
 
-        # macOS
-        "/Library/Fonts/Arial.ttf",
-        "/Library/Fonts/Arial Unicode.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    font_path = project_root / "fonts" / "Arial.ttf"
 
-        # macOS DejaVu (если установлен через brew)
-        "/opt/homebrew/share/fonts/DejaVuSans.ttf",
-        "/usr/local/share/fonts/DejaVuSans.ttf"
-
-    ]
-
-
-    for font in fonts:
-
-        if os.path.exists(font):
-
-            return font
-
-
-    # дополнительный поиск
-    search_dirs = [
-        "/Library/Fonts",
-        "/System/Library/Fonts",
-        "/System/Library/Fonts/Supplemental"
-    ]
-
-
-    for directory in search_dirs:
-
-        if os.path.exists(directory):
-
-            for root, dirs, files in os.walk(directory):
-
-                for file in files:
-
-                    if file.lower().endswith(".ttf"):
-
-                        return os.path.join(
-                            root,
-                            file
-                        )
-
+    if font_path.is_file():
+        return str(font_path)
 
     raise FileNotFoundError(
-        "Не найден TTF шрифт на macOS"
+        f"Не найден шрифт: {font_path}"
     )
 
-
-    
 
 def save_pdf(
     text: str,
     path: str
 ):
-
     font_path = find_font()
-
 
     pdfmetrics.registerFont(
         TTFont(
-            "DejaVu",
+            "Arial",
             font_path
         )
     )
 
-
-    document = SimpleDocTemplate(
-        path
-    )
-
+    document = SimpleDocTemplate(str(path))
 
     style = ParagraphStyle(
         "Default",
-        fontName="DejaVu",
+        fontName="Arial",
         fontSize=12,
         leading=16
     )
 
-
     content = []
-
 
     for line in text.splitlines():
 
@@ -234,7 +190,6 @@ def save_pdf(
                     style
                 )
             )
-
 
     document.build(
         content

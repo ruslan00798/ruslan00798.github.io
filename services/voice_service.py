@@ -1,28 +1,55 @@
 import os
 
-from aiogram.types import CallbackQuery, FSInputFile
+from aiogram.types import Message, FSInputFile
 
-from services.tts import get_voice, text_to_speech
-from database.requests import get_voice_setting
+from services.tts import generate_audio
 
 
-async def send_word_voice(callback: CallbackQuery, word: dict,):
+async def send_word_voice(
+    message: Message,
+    word: dict,
+):
+    """
+    Создаёт аудио и отправляет его.
+    Возвращает message_id аудио.
+    """
 
-    voice_enabled = await get_voice_setting(callback.from_user.id)
+    if not word:
+        return None
 
-    if not voice_enabled:
-        return
-    
-    language = word.get("language", "en")
+    text = word.get("word")
 
-    file_path = await text_to_speech(
-        word["word"],
-        get_voice(language)
+    if not text:
+        return None
+
+    language = word.get(
+        "language",
+        "en"
     )
 
-    await callback.message.answer_audio(
-        audio=FSInputFile(file_path),
-        caption=f"🔊 {word['word']}"
-    )
+    file_path = None
 
-    os.remove(file_path)
+    try:
+
+        file_path = await generate_audio(
+            text=text,
+            language=language,
+        )
+
+        audio_message = await message.answer_audio(
+            audio=FSInputFile(file_path),
+            caption=f"🔊 {text}",
+        )
+
+        return audio_message.message_id
+
+
+    except Exception:
+
+        return None
+
+
+    finally:
+
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)

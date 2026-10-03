@@ -1,0 +1,40 @@
+services:
+  bot:
+    build: .
+    container_name: bot1
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - .:/app  
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - bot-network
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: unless-stopped
+    networks:
+      - bot-network
+
+  postgres:
+    image: postgres:18
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: translaytor
+      POSTGRES_USER: translaytor
+      POSTGRES_PASSWORD: ruslan
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - bot-network
+networks:
+  bot-network:
+
+volumes:
+  postgres_data:
