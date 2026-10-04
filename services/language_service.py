@@ -1,9 +1,10 @@
 import logging
 
+from services.learning.language_repository import LanguageRepository
+
+
 logger = logging.getLogger(__name__)
 
-
-from services.learning.language_repository import LanguageRepository
 
 class LanguageService:
     def __init__(self, repository: LanguageRepository):
@@ -13,13 +14,11 @@ class LanguageService:
         self,
         user_id: int,
         language_code: str,
-        daily_goal: int,    
     ):
         logger.info(
-            "обновляем язык: user_id=%s language_code=%s daily_goal=%s",
+            "обновляем язык: user_id=%s language_code=%s",
             user_id,
             language_code,
-            daily_goal,
         )
 
         try:
@@ -28,26 +27,52 @@ class LanguageService:
                 language_code,
             )
 
+            logger.info(
+                "язык успешно обновлён: user_id=%s language_code=%s",
+                user_id,
+                language_code,
+            )
+
+            return language
+
+        except Exception:
+            logger.exception(
+                "не удалось изменить язык: user_id=%s language_code=%s",
+                user_id,
+                language_code,
+            )
+            raise
+
+    async def change_daily_goal(
+        self,
+        user_id: int,
+        daily_goal: int,
+    ):
+        logger.info(
+            "обновляем дневную цель: user_id=%s daily_goal=%s",
+            user_id,
+            daily_goal,
+        )
+
+        try:
             updated_goal = await self.repository.update_daily_goal(
                 user_id,
                 daily_goal,
             )
 
             logger.info(
-                "обновление языка и цели user_id=%s language_code=%s",
+                "дневная цель успешно обновлена: user_id=%s daily_goal=%s",
                 user_id,
-                language_code,
-                updated_goal,
+                daily_goal,
             )
-            return language, updated_goal
-        
+
+            return updated_goal
+
         except Exception:
             logger.exception(
-                "не удалось изменить язык и цель user_id=%s language_code=%s dayly_goal=%s",
+                "не удалось изменить дневную цель: "
+                "user_id=%s daily_goal=%s",
                 user_id,
-                language_code,
                 daily_goal,
             )
             raise
-        
-            

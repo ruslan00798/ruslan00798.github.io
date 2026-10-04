@@ -4,6 +4,7 @@ import os
 import tempfile
 
 import edge_tts
+from edge_tts.exceptions import NoAudioReceived
 
 
 logger = logging.getLogger(__name__)
@@ -26,8 +27,14 @@ VOICES = {
 }
 
 
+# ==========================================
+# Настройки
+# ==========================================
+
 MAX_TTS_LENGTH = 3000
 TTS_TIMEOUT = 30
+TTS_RETRIES = 3
+TTS_RETRY_DELAY = 2
 
 
 # ==========================================
@@ -35,13 +42,15 @@ TTS_TIMEOUT = 30
 # ==========================================
 
 def get_voice(language: str) -> str | None:
+    """
+    Возвращает голос Edge TTS для языка.
+    """
 
     voice = VOICES.get(language)
 
     if not voice:
-
         logger.error(
-            "Голос для языка не найден: %s",
+            "Голос для языка не найден: language=%s",
             language,
         )
 
@@ -51,13 +60,27 @@ def get_voice(language: str) -> str | None:
 
 
 # ==========================================
-# Text → Speech
+# Text -> Speech
 # ==========================================
 
 async def text_to_speech(
     text: str,
     voice: str,
 ) -> str:
+    """
+    Преобразует текст в MP3.
+
+    Возвращает путь к MP3-файлу.
+
+    Важно:
+    после успешного выполнения файл НЕ удаляется.
+    Его должен удалить вызывающий код после отправки
+    аудио пользователю в Telegram.
+    """
+
+    # ------------------------------------------
+    # Проверяем текст
+    # ------------------------------------------
 
     text = text.strip()
 
@@ -66,77 +89,223 @@ async def text_to_speech(
             "Пустой текст для озвучки"
         )
 
-    # Ограничение Edge TTS
-    if len(text) > MAX_TTS_LENGTH:
+    # ------------------------------------------
+    # Проверяем голос
+    # ------------------------------------------
 
+    if not voice:
+        raise ValueError(
+            "Не указан голос для TTS"
+        )
+
+    # ------------------------------------------
+    # Ограничение длины
+    # ------------------------------------------
+
+    if len(text) > MAX_TTS_LENGTH:
         logger.warning(
-            "Текст слишком длинный (%s символов), "
+            "Текст слишком длинный: %s символов, "
             "обрезаем до %s",
             len(text),
             MAX_TTS_LENGTH,
         )
 
-        text = text[:MAX_TTS_LENGTH]
+        text = text[:MAX_TTS_LENGTH].rstrip()
 
-    # Создаём временный mp3
-    file = tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=".mp3",
+    logger.info(
+        "TTS started: voice=%s text_length=%s",
+        voice,
+        len(text),
     )
 
-    file_path = file.name
-    file.close()
+    last_error: Exception | None = None
 
-    try:
+    # ==========================================
+    # Повторные попытки
+    # ==========================================
 
-        logger.info(
-            "TTS: voice=%s text=%s",
-            voice,
-            text,
-        )
+    for attempt in range(1, TTS_RETRIES + 1):
 
-        communicate = edge_tts.Communicate(
-            text=text,
-            voice=voice,
-        )
+        file_path: str | None = None
 
-        await asyncio.wait_for(
-            communicate.save(file_path),
-            timeout=TTS_TIMEOUT,
-        )
+        try:
+            # ----------------------------------
+            # Создаём временный MP3
+            # ----------------------------------
 
-        # Проверяем, что файл реально создан
-        if not os.path.exists(file_path):
-
-            raise RuntimeError(
-                "Edge TTS не создал аудиофайл"
+            file = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".mp3",
             )
 
-        # Проверяем, что файл не пустой
-        if os.path.getsize(file_path) == 0:
+            file_path = file.name
+            file.close()
 
-            raise RuntimeError(
-                "Edge TTS создал пустой аудиофайл"
+            logger.info(
+                "TTS attempt=%s/%s voice=%s",
+                attempt,
+                TTS_RETRIES,
+                voice,
             )
 
-        logger.info(
-            "TTS успешно создан: %s",
-            file_path,
-        )
+            # ----------------------------------
+            # Создаём Edge TTS
+            # ----------------------------------
 
-        return file_path
+            communicate = edge_tts.Communicate(
+                text=text,
+                voice=voice,
+            )
 
-    except Exception:
+            # ----------------------------------
+            # Генерируем аудио с timeout
+            # ----------------------------------
 
-        logger.exception(
-            "Ошибка Edge TTS: voice=%s",
-            voice,
-        )
+            await asyncio.wait_for(
+                communicate.save(file_path),
+                timeout=TTS_TIMEOUT,
+            )
 
-        if os.path.exists(file_path):
-            os.remove(file_path)
+            # ----------------------------------
+            # Проверяем существование файла
+            # ----------------------------------
 
-        raise
+            if not os.path.exists(file_path):
+                raise RuntimeError(
+                    "Edge TTS не создал аудиофайл"
+                )
+
+            # ----------------------------------
+            # Проверяем размер файла
+            # ----------------------------------
+
+            file_size = os.path.getsize(file_path)
+
+            if file_size == 0:
+                raise RuntimeError(
+                    "Edge TTS создал пустой аудиофайл"
+                )
+
+            logger.info(
+                "TTS успешно создан: "
+                "voice=%s size=%s bytes",
+                voice,
+                file_size,
+            )
+
+            # ----------------------------------
+            # УСПЕХ
+            #
+            # Файл НЕ удаляем.
+            # Его должен удалить код,
+            # который отправляет его в Telegram.
+            # ----------------------------------
+
+            return file_path
+
+        # ======================================
+        # Edge TTS не вернул аудио
+        # ======================================
+
+        except NoAudioReceived as error:
+
+            last_error = error
+
+            logger.warning(
+                "Edge TTS не вернул аудио: "
+                "attempt=%s/%s voice=%s",
+                attempt,
+                TTS_RETRIES,
+                voice,
+            )
+
+        # ======================================
+        # Timeout
+        # ======================================
+
+        except asyncio.TimeoutError as error:
+
+            last_error = error
+
+            logger.warning(
+                "Edge TTS timeout: "
+                "attempt=%s/%s voice=%s timeout=%s",
+                attempt,
+                TTS_RETRIES,
+                voice,
+                TTS_TIMEOUT,
+            )
+
+        # ======================================
+        # Остальные ошибки
+        # ======================================
+
+        except Exception as error:
+
+            last_error = error
+
+            logger.exception(
+                "Ошибка Edge TTS: "
+                "attempt=%s/%s voice=%s",
+                attempt,
+                TTS_RETRIES,
+                voice,
+            )
+
+        # ======================================
+        # Удаляем файл неудачной попытки
+        # ======================================
+
+        if file_path and os.path.exists(file_path):
+
+            try:
+                os.remove(file_path)
+
+                logger.debug(
+                    "Удалён временный файл неудачной "
+                    "попытки: %s",
+                    file_path,
+                )
+
+            except OSError:
+
+                logger.warning(
+                    "Не удалось удалить временный файл: %s",
+                    file_path,
+                )
+
+        # ======================================
+        # Ждём перед повторной попыткой
+        # ======================================
+
+        if attempt < TTS_RETRIES:
+
+            logger.info(
+                "Повторная попытка TTS через %s сек.",
+                TTS_RETRY_DELAY,
+            )
+
+            await asyncio.sleep(
+                TTS_RETRY_DELAY
+            )
+
+    # ==========================================
+    # Все попытки завершились ошибкой
+    # ==========================================
+
+    logger.error(
+        "Edge TTS окончательно не смог "
+        "создать аудио: voice=%s attempts=%s",
+        voice,
+        TTS_RETRIES,
+    )
+
+    if last_error:
+        raise last_error
+
+    raise RuntimeError(
+        "Edge TTS не смог создать аудио"
+    )
 
 
 # ==========================================
@@ -147,19 +316,21 @@ async def generate_audio(
     text: str,
     language: str,
 ) -> str:
-
-    """
-    Создаёт MP3-аудио для текста
-    на выбранном языке.
-    """
+    
+    # ------------------------------------------
+    # Получаем голос
+    # ------------------------------------------
 
     voice = get_voice(language)
 
     if not voice:
-
         raise ValueError(
             f"Неподдерживаемый язык озвучки: {language}"
         )
+
+    # ------------------------------------------
+    # Генерируем аудио
+    # ------------------------------------------
 
     return await text_to_speech(
         text=text,
