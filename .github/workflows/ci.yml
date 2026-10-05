@@ -17,6 +17,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Check test environment
+        env:
+          BOT_TOKEN: test_token
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_NAME: test_db
+          DB_USER: test_user
+          DB_PASS: test_pass
+        run: |
+          echo "BOT_TOKEN is set: ${BOT_TOKEN:+yes}"
+          echo "DB_HOST is set: ${DB_HOST:+yes}"
+          echo "DB_NAME is set: ${DB_NAME:+yes}"
+          echo "DB_USER is set: ${DB_USER:+yes}"
+          echo "DB_PASS is set: ${DB_PASS:+yes}"
+
       - name: Run tests
         env:
           BOT_TOKEN: test_token
