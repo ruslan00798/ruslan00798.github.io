@@ -27,12 +27,12 @@ jobs:
 
       - name: Check environment
         run: |
-          echo "BOT_TOKEN=${BOT_TOKEN}"
-          echo "DB_HOST=${DB_HOST}"
-          echo "DB_PORT=${DB_PORT}"
-          echo "DB_NAME=${DB_NAME}"
-          echo "DB_USER=${DB_USER}"
-          echo "DB_PASS=${DB_PASS}"
+          python -c "import os; print('BOT_TOKEN:', bool(os.getenv('BOT_TOKEN')))"
+          python -c "import os; print('DB_HOST:', os.getenv('DB_HOST'))"
+          python -c "import os; print('DB_PORT:', os.getenv('DB_PORT'))"
+          python -c "import os; print('DB_NAME:', os.getenv('DB_NAME'))"
+          python -c "import os; print('DB_USER:', os.getenv('DB_USER'))"
+          python -c "import os; print('DB_PASS:', bool(os.getenv('DB_PASS')))"
 
       - name: Run tests
         run: pytest
