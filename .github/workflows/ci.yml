@@ -7,14 +7,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    env:
-      BOT_TOKEN: test_token
-      DB_HOST: localhost
-      DB_PORT: "5432"
-      DB_NAME: test_db
-      DB_USER: test_user
-      DB_PASS: test_pass
-
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +18,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Check environment
+        env:
+          BOT_TOKEN: test_token
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_NAME: test_db
+          DB_USER: test_user
+          DB_PASS: test_pass
         run: |
           python -c "import os; print('BOT_TOKEN:', bool(os.getenv('BOT_TOKEN')))"
           python -c "import os; print('DB_HOST:', os.getenv('DB_HOST'))"
@@ -34,5 +33,23 @@ jobs:
           python -c "import os; print('DB_USER:', os.getenv('DB_USER'))"
           python -c "import os; print('DB_PASS:', bool(os.getenv('DB_PASS')))"
 
+      - name: Test settings
+        env:
+          BOT_TOKEN: test_token
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_NAME: test_db
+          DB_USER: test_user
+          DB_PASS: test_pass
+        run: |
+          python -c "from config import settings; print('Settings loaded successfully')"
+
       - name: Run tests
+        env:
+          BOT_TOKEN: test_token
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_NAME: test_db
+          DB_USER: test_user
+          DB_PASS: test_pass
         run: pytest
