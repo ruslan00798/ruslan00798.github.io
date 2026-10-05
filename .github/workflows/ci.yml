@@ -6,6 +6,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    env:
+      BOT_TOKEN: "test-token"
+      DB_HOST: "localhost"
+      DB_PORT: "5432"
+      DB_NAME: "test_db"
+      DB_USER: "test_user"
+      DB_PASS: "test_password"
+
     steps:
       - uses: actions/checkout@v4
 
@@ -13,7 +22,7 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Inatall dependencies
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Run tests
