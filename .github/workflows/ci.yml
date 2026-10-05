@@ -19,11 +19,10 @@ jobs:
 
       - name: Run tests
         env:
-          BOT_TOKEN: test-token
+          BOT_TOKEN: test_token
           DB_HOST: localhost
           DB_PORT: "5432"
           DB_NAME: test_db
           DB_USER: test_user
-          DB_PASS: test_password
+          DB_PASS: test_pass
         run: pytest
-
