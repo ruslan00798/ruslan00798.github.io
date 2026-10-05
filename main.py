@@ -88,7 +88,7 @@ async def main():
         await dp.start_polling(bot)
 
     finally:
-        await close_db
+        await close_db()
         await redis.aclose()
         await bot.session.close()
 
