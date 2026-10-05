@@ -1,55 +1,31 @@
 name: CI
 
 on:
-  push:
+push:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+test:
+runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
+env:
+  BOT_TOKEN: test_token
+  DB_HOST: localhost
+  DB_PORT: "5432"
+  DB_NAME: test_db
+  DB_USER: test_user
+  DB_PASS: test_pass
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+steps:
+  - uses: actions/checkout@v4
 
-      - name: Check environment
-        env:
-          BOT_TOKEN: test_token
-          DB_HOST: localhost
-          DB_PORT: "5432"
-          DB_NAME: test_db
-          DB_USER: test_user
-          DB_PASS: test_pass
-        run: |
-          python -c "import os; print('BOT_TOKEN:', bool(os.getenv('BOT_TOKEN')))"
-          python -c "import os; print('DB_HOST:', os.getenv('DB_HOST'))"
-          python -c "import os; print('DB_PORT:', os.getenv('DB_PORT'))"
-          python -c "import os; print('DB_NAME:', os.getenv('DB_NAME'))"
-          python -c "import os; print('DB_USER:', os.getenv('DB_USER'))"
-          python -c "import os; print('DB_PASS:', bool(os.getenv('DB_PASS')))"
+  - uses: actions/setup-python@v5
+    with:
+      python-version: "3.14"
 
-      - name: Test settings
-        env:
-          BOT_TOKEN: test_token
-          DB_HOST: localhost
-          DB_PORT: "5432"
-          DB_NAME: test_db
-          DB_USER: test_user
-          DB_PASS: test_pass
-        run: |
-          python -c "from config import settings; print('Settings loaded successfully')"
+  - name: Install dependencies
+    run: pip install -r requirements.txt
 
-      - name: Run tests
-        env:
-          BOT_TOKEN: test_token
-          DB_HOST: localhost
-          DB_PORT: "5432"
-          DB_NAME: test_db
-          DB_USER: test_user
-          DB_PASS: test_pass
-        run: pytest
+  - name: Run tests
+    run: pytest
+
