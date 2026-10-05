@@ -25,5 +25,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Check environment
+        run: |
+          python -c "import os; print('BOT_TOKEN:', bool(os.getenv('BOT_TOKEN')))"
+          python -c "import os; print('DB_HOST:', os.getenv('DB_HOST'))"
+          python -c "import os; print('DB_NAME:', os.getenv('DB_NAME'))"
+          python -c "import os; print('DB_USER:', os.getenv('DB_USER'))"
+          python -c "import os; print('DB_PASS:', bool(os.getenv('DB_PASS')))"
+
       - name: Run tests
         run: pytest
+
