@@ -8,9 +8,9 @@ Telegram-бот для перевода текста, документов и г
 ## 🎬 Демонстрация
 
 ![Демонстрация работы бота](media/bot-demo.gif)
----
 
-## Кнопка для перехода в телеграмм 
+## 🚀 Открыть бота в Telegram
+
 [![Открыть в Telegram](https://img.shields.io/badge/Открыть_бота-в_Telegram-2AABEE?logo=telegram&logoColor=white)](https://t.me/The_new_Translator_bot)
 
 ## ✨ Возможности
